@@ -52,6 +52,8 @@
 
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/thread.hpp>
+#include <boost/random/mersenne_twister.hpp>
+#include <boost/random/uniform_int.hpp>
 
 #if defined(NDEBUG)
 # error "Bitcoin cannot be compiled without assertions."
@@ -113,6 +115,7 @@ uint256 g_best_block;
 int nScriptCheckThreads = 0;
 std::atomic_bool fImporting(false);
 std::atomic_bool fReindex(false);
+bool fSyncQuickly = true;
 bool fHavePruned = false;
 bool fPruneMode = false;
 bool fRequireStandard = true;
@@ -152,6 +155,11 @@ namespace {
     /** Dirty block file entries. */
     std::set<int> setDirtyFileInfo;
 } // anon namespace
+
+bool OkToSyncQuick()
+{
+    return fSyncQuickly;
+}
 
 CBlockIndex* LookupBlockIndex(const uint256& hash)
 {
@@ -1231,17 +1239,68 @@ bool ReadRawBlockFromDisk(std::vector<uint8_t>& block, const CBlockIndex* pindex
     return ReadRawBlockFromDisk(block, block_pos, message_start);
 }
 
-CAmount GetBlockSubsidy(int nHeight, const Consensus::Params& consensusParams)
+int static generateMTRandom(unsigned int s, int range)
 {
-    int halvings = nHeight / consensusParams.nSubsidyHalvingInterval;
-    // Force block reward to zero when right shift is undefined.
-    if (halvings >= 64)
-        return 0;
+    boost::mt19937 gen(s);
+    boost::uniform_int<> dist(1, range);
+    return dist(gen);
+}
 
-    CAmount nSubsidy = 50 * COIN;
-    // Subsidy is cut in half every 210,000 blocks which will occur approximately every 4 years.
-    nSubsidy >>= halvings;
-    return nSubsidy;
+CAmount GetBlockSubsidy(int nHeight, const CAmount& nFees, uint256 prevHash, const Consensus::Params& consensusParams)
+{
+    CAmount nSubsidy = 10000 * COIN;
+
+    std::string cseed_str = prevHash.ToString().substr(7,7);
+    const char* cseed = cseed_str.c_str();
+    long seed = hex2long(cseed);
+    int rand = generateMTRandom(seed, 999999);
+    int rand1 = 0;
+    int rand2 = 0;
+    int rand3 = 0;
+    int rand4 = 0;
+    int rand5 = 0;
+
+    if (nHeight == 1) {
+	nSubsidy = 97000000 * COIN;
+    }
+    else if (nHeight < 101) {
+	nSubsidy = 1 * COIN;
+    }
+
+        if (nHeight < 100000) {
+	        nSubsidy = (1 + rand) * COIN;
+        } else if (nHeight < 200000) {
+	cseed_str = prevHash.ToString().substr(7,7);
+	cseed = cseed_str.c_str();
+	seed = hex2long(cseed);
+	rand1 = generateMTRandom(seed, 499999);
+	nSubsidy = (1 + rand1) * COIN;
+        } else if (nHeight < 300000) {
+		cseed_str = prevHash.ToString().substr(6,7);
+		cseed = cseed_str.c_str();
+		seed = hex2long(cseed);
+		rand2 = generateMTRandom(seed, 249999);
+		nSubsidy = (1 + rand2) * COIN;
+	} else if (nHeight < 400000) {
+		cseed_str = prevHash.ToString().substr(7,7);
+		cseed = cseed_str.c_str();
+		seed = hex2long(cseed);
+		rand3 = generateMTRandom(seed, 124999);
+		nSubsidy = (1 + rand3) * COIN;
+	} else if (nHeight < 500000) {
+		cseed_str = prevHash.ToString().substr(7,7);
+		cseed = cseed_str.c_str();
+		seed = hex2long(cseed);
+		rand4 = generateMTRandom(seed, 62499);
+		nSubsidy = (1 + rand4) * COIN;
+	} else if (nHeight < 600000) {
+		cseed_str = prevHash.ToString().substr(6,7);
+		cseed = cseed_str.c_str();
+		seed = hex2long(cseed);
+		rand5 = generateMTRandom(seed, 31249);
+		nSubsidy = (1 + rand5) * COIN;
+	}
+    return nSubsidy + nFees;
 }
 
 CoinsViews::CoinsViews(
@@ -2171,7 +2230,13 @@ bool CChainState::ConnectBlock(const CBlock& block, CValidationState& state, CBl
     int64_t nTime3 = GetTimeMicros(); nTimeConnect += nTime3 - nTime2;
     LogPrint(BCLog::BENCH, "      - Connect %u transactions: %.2fms (%.3fms/tx, %.3fms/txin) [%.2fs (%.2fms/blk)]\n", (unsigned)block.vtx.size(), MILLI * (nTime3 - nTime2), MILLI * (nTime3 - nTime2) / block.vtx.size(), nInputs <= 1 ? 0 : MILLI * (nTime3 - nTime2) / (nInputs-1), nTimeConnect * MICRO, nTimeConnect * MILLI / nBlocksTotal);
 
-    CAmount blockReward = nFees + GetBlockSubsidy(pindex->nHeight, chainparams.GetConsensus());
+    //! To validate early awards
+    uint256 prevHash;
+    if(pindex->pprev){
+        prevHash = pindex->pprev->GetBlockHash();
+    }
+ 
+    CAmount blockReward = GetBlockSubsidy(pindex->nHeight, nFees, prevHash, chainparams.GetConsensus());
     if (block.vtx[0]->GetValueOut() > blockReward)
         return state.Invalid(ValidationInvalidReason::CONSENSUS,
                          error("ConnectBlock(): coinbase pays too much (actual=%d vs limit=%d)",
@@ -3270,7 +3335,7 @@ bool CheckBlock(const CBlock& block, CValidationState& state, const Consensus::P
 
     // Check that the header is valid (particularly PoW).  This is mostly
     // redundant with the call in AcceptBlockHeader.
-    if (!CheckBlockHeader(block, state, consensusParams, fCheckPOW))
+    if (!CheckBlockHeader(block, state, consensusParams, fCheckPOW) && !OkToSyncQuick())
         return false;
 
     // Check the merkle root.
@@ -3415,6 +3480,10 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, CValidationSta
     assert(pindexPrev != nullptr);
     const int nHeight = pindexPrev->nHeight + 1;
 
+    // Test if quicksync is appropriate
+    if (nHeight > QUICKSYNC_UNTIL_HEIGHT)
+        fSyncQuickly = false;
+
     // Check proof of work
     const Consensus::Params& consensusParams = params.GetConsensus();
     if (block.nBits != GetNextWorkRequired(pindexPrev, &block, consensusParams))
@@ -3555,7 +3624,7 @@ bool BlockManager::AcceptBlockHeader(const CBlockHeader& block, CValidationState
             return true;
         }
 
-        if (!CheckBlockHeader(block, state, chainparams.GetConsensus()))
+        if (!CheckBlockHeader(block, state, chainparams.GetConsensus()) && !OkToSyncQuick())
             return error("%s: Consensus::CheckBlockHeader: %s, %s", __func__, hash.ToString(), FormatStateMessage(state));
 
         // Get prev block index

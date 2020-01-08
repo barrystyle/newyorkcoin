@@ -372,6 +372,8 @@ std::string CopyrightHolders(const std::string& strPrefix);
  */
 int ScheduleBatchPriority();
 
+long hex2long(const char* hexString);
+
 namespace util {
 
 //! Simplification of std insertion
