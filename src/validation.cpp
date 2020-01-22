@@ -1248,59 +1248,90 @@ int static generateMTRandom(unsigned int s, int range)
 
 CAmount GetBlockSubsidy(int nHeight, const CAmount& nFees, uint256 prevHash, const Consensus::Params& consensusParams)
 {
-    CAmount nSubsidy = 10000 * COIN;
+	CAmount nSubsidy = 10000 * COIN;
 
-    std::string cseed_str = prevHash.ToString().substr(7,7);
-    const char* cseed = cseed_str.c_str();
-    long seed = hex2long(cseed);
-    int rand = generateMTRandom(seed, 999999);
-    int rand1 = 0;
-    int rand2 = 0;
-    int rand3 = 0;
-    int rand4 = 0;
-    int rand5 = 0;
+	std::string cseed_str = prevHash.ToString().substr(7,7);
+	const char* cseed = cseed_str.c_str();
+	long seed = hex2long(cseed);
+	int rand = generateMTRandom(seed, 999999);
+	int rand1 = 0;
+	int rand2 = 0;
+	int rand3 = 0;
+	int rand4 = 0;
+	int rand5 = 0;
 
-    if (nHeight == 1) {
+	if (nHeight == 1) {
 	nSubsidy = 97000000 * COIN;
-    }
-    else if (nHeight < 101) {
+	} else if (nHeight < 101) {
 	nSubsidy = 1 * COIN;
-    }
+	}
 
-        if (nHeight < 100000) {
-	        nSubsidy = (1 + rand) * COIN;
-        } else if (nHeight < 200000) {
+	if (nHeight < 100000) {
+	nSubsidy = (1 + rand) * COIN;
+	} else if (nHeight < 200000) {
 	cseed_str = prevHash.ToString().substr(7,7);
 	cseed = cseed_str.c_str();
 	seed = hex2long(cseed);
 	rand1 = generateMTRandom(seed, 499999);
 	nSubsidy = (1 + rand1) * COIN;
-        } else if (nHeight < 300000) {
-		cseed_str = prevHash.ToString().substr(6,7);
-		cseed = cseed_str.c_str();
-		seed = hex2long(cseed);
-		rand2 = generateMTRandom(seed, 249999);
-		nSubsidy = (1 + rand2) * COIN;
+	} else if (nHeight < 300000) {
+	cseed_str = prevHash.ToString().substr(6,7);
+	cseed = cseed_str.c_str();
+	seed = hex2long(cseed);
+	rand2 = generateMTRandom(seed, 249999);
+	nSubsidy = (1 + rand2) * COIN;
 	} else if (nHeight < 400000) {
-		cseed_str = prevHash.ToString().substr(7,7);
-		cseed = cseed_str.c_str();
-		seed = hex2long(cseed);
-		rand3 = generateMTRandom(seed, 124999);
-		nSubsidy = (1 + rand3) * COIN;
+	cseed_str = prevHash.ToString().substr(7,7);
+	cseed = cseed_str.c_str();
+	seed = hex2long(cseed);
+	rand3 = generateMTRandom(seed, 124999);
+	nSubsidy = (1 + rand3) * COIN;
 	} else if (nHeight < 500000) {
-		cseed_str = prevHash.ToString().substr(7,7);
-		cseed = cseed_str.c_str();
-		seed = hex2long(cseed);
-		rand4 = generateMTRandom(seed, 62499);
-		nSubsidy = (1 + rand4) * COIN;
+	cseed_str = prevHash.ToString().substr(7,7);
+	cseed = cseed_str.c_str();
+	seed = hex2long(cseed);
+	rand4 = generateMTRandom(seed, 62499);
+	nSubsidy = (1 + rand4) * COIN;
 	} else if (nHeight < 600000) {
-		cseed_str = prevHash.ToString().substr(6,7);
-		cseed = cseed_str.c_str();
-		seed = hex2long(cseed);
-		rand5 = generateMTRandom(seed, 31249);
-		nSubsidy = (1 + rand5) * COIN;
-	}
-    return nSubsidy + nFees;
+	cseed_str = prevHash.ToString().substr(6,7);
+	cseed = cseed_str.c_str();
+	seed = hex2long(cseed);
+	rand5 = generateMTRandom(seed, 31249);
+	nSubsidy = (1 + rand5) * COIN;
+	} else if(nHeight > 4800000)
+	{
+	  int halvings = nHeight / consensusParams.nSubsidyHalvingInterval;
+	  if(nHeight < (9 * consensusParams.nSubsidyHalvingInterval)) // < 4,500,000
+	  {
+		 return 10000 * COIN;
+	  }
+	  else if (nHeight < (10 * consensusParams.nSubsidyHalvingInterval)) // < 5,000,000
+	  {
+		return 5000 * COIN;
+	  }
+	  else if (nHeight < (11 * consensusParams.nSubsidyHalvingInterval)) // < 5,500,000
+	  {
+		return 2500 * COIN;
+	  }
+	  else if (nHeight < (12 * consensusParams.nSubsidyHalvingInterval)) //< 6,000,000
+	  {
+		return 1250 * COIN;
+	  }
+	  else if (nHeight < (13 * consensusParams.nSubsidyHalvingInterval)) // < 6,500,000
+	  {
+		return 625 * COIN;
+	  }
+	  else if (nHeight < (14 * consensusParams.nSubsidyHalvingInterval)) // < 7,000,000
+	  {
+		return 100 * COIN;
+	  }
+	  else
+	  {
+		return 50 * COIN;
+	  }
+    }
+
+	return nSubsidy + nFees;
 }
 
 CoinsViews::CoinsViews(
@@ -3479,15 +3510,11 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, CValidationSta
 {
     assert(pindexPrev != nullptr);
     const int nHeight = pindexPrev->nHeight + 1;
+    const Consensus::Params& consensusParams = params.GetConsensus();
 
     // Test if quicksync is appropriate
     if (nHeight > QUICKSYNC_UNTIL_HEIGHT)
         fSyncQuickly = false;
-
-    // Check proof of work
-    const Consensus::Params& consensusParams = params.GetConsensus();
-    if (block.nBits != GetNextWorkRequired(pindexPrev, &block, consensusParams))
-        return state.Invalid(ValidationInvalidReason::BLOCK_INVALID_HEADER, false, REJECT_INVALID, "bad-diffbits", "incorrect proof of work");
 
     // Check against checkpoints
     if (fCheckpointsEnabled) {
@@ -3527,6 +3554,10 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, CValidationSta
 static bool ContextualCheckBlock(const CBlock& block, CValidationState& state, const Consensus::Params& consensusParams, const CBlockIndex* pindexPrev)
 {
     const int nHeight = pindexPrev == nullptr ? 0 : pindexPrev->nHeight + 1;
+
+    // Check proof of work
+    if (block.nBits != GetNextWorkRequired(pindexPrev, &block, consensusParams))
+        return state.Invalid(ValidationInvalidReason::BLOCK_INVALID_HEADER, false, REJECT_INVALID, "bad-diffbits", "incorrect proof of work");
 
     // Start enforcing BIP113 (Median Time Past).
     int nLockTimeFlags = 0;

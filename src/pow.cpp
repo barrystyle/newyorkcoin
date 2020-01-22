@@ -12,6 +12,54 @@
 #include <uint256.h>
 #include <util/system.h>
 
+unsigned int Digishield(const CBlockIndex* pindexLast, int64_t nFirstBlockTime, const Consensus::Params& params)
+{
+    int nHeight = pindexLast->nHeight + 1;
+    const int64_t retargetTimespan = params.nPowTargetTimespan;
+    const int64_t nActualTimespan = pindexLast->GetBlockTime() - nFirstBlockTime;
+    int64_t nModulatedTimespan = nActualTimespan;
+    int64_t nMaxTimespan;
+    int64_t nMinTimespan;
+
+    if (true) /*if (params.fDigishieldDifficultyCalculation)*/ 
+    {
+        // amplitude filter - thanks to daft27 for this code
+        nModulatedTimespan = retargetTimespan + (nModulatedTimespan - retargetTimespan) / 8;
+
+        nMinTimespan = retargetTimespan - (retargetTimespan / 4);
+        nMaxTimespan = retargetTimespan + (retargetTimespan / 2);
+    } else if (nHeight > 10000) {
+        nMinTimespan = retargetTimespan / 4;
+        nMaxTimespan = retargetTimespan * 4;
+    } else if (nHeight > 5000) {
+        nMinTimespan = retargetTimespan / 8;
+        nMaxTimespan = retargetTimespan * 4;
+    } else {
+        nMinTimespan = retargetTimespan / 16;
+        nMaxTimespan = retargetTimespan * 4;
+    }
+
+    // Limit adjustment step
+    if (nModulatedTimespan < nMinTimespan)
+        nModulatedTimespan = nMinTimespan;
+    else if (nModulatedTimespan > nMaxTimespan)
+        nModulatedTimespan = nMaxTimespan;
+
+    // Retarget
+    const arith_uint256 bnPowLimit = UintToArith256(params.powLimit);
+    arith_uint256 bnNew;
+    arith_uint256 bnOld;
+    bnNew.SetCompact(pindexLast->nBits);
+    bnOld = bnNew;
+    bnNew *= nModulatedTimespan;
+    bnNew /= retargetTimespan;
+
+    if (bnNew > bnPowLimit)
+        bnNew = bnPowLimit;
+
+    return bnNew.GetCompact();
+}
+
 unsigned int KimotoGravityWell(const CBlockIndex* pindexLast, const CBlockHeader* pblock, uint64_t TargetBlocksSpacingSeconds, uint64_t PastBlocksMin, uint64_t PastBlocksMax, const Consensus::Params& params)
 {
     const CBlockIndex* BlockLastSolved = pindexLast;
