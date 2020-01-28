@@ -91,7 +91,11 @@ public:
         // By default assume that the signatures in ancestors of this block are valid.
         consensus.defaultAssumeValid = uint256S("0x0000000000000000000000000000000000000000000000000000000000000000");
 
-        /**
+        consensus.nAuxpowChainId = 0x7C1; // 1985
+        consensus.nAuxpowStartHeight = 371337;
+        consensus.fStrictChainId = true;
+        consensus.nLegacyBlocksBefore = 371337;
+        /** 
          * The message start string is designed to be unlikely to occur in normal data.
          * The characters are rarely used upper ASCII, not valid as UTF-8, and produce
          * a large 32-bit integer with any alignment.
