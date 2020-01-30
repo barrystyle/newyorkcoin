@@ -34,6 +34,7 @@
 #include <policy/policy.h>
 #include <policy/settings.h>
 #include <rpc/blockchain.h>
+#include <rpc/auxpow_miner.h>
 #include <rpc/register.h>
 #include <rpc/server.h>
 #include <rpc/util.h>
