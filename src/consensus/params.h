@@ -80,26 +80,27 @@ struct Params {
     int64_t nPowTargetSpacing;
     int64_t nPowTargetTimespan;
     int64_t DifficultyAdjustmentInterval() const { return nPowTargetTimespan / nPowTargetSpacing; }
+    int nCoinbaseMaturity;
+    int CoinbaseMaturity() const { return nCoinbaseMaturity; }
+
+    /** Newyorkcoin-specific parameters */
+    bool fDigishieldDifficultyCalculation;
+    bool fPowAllowDigishieldMinDifficultyBlocks; // Allow minimum difficulty blocks where a retarget would normally occur
+    bool fSimplifiedRewards;
+
     uint256 nMinimumChainWork;
     uint256 defaultAssumeValid;
 
     /** Auxpow parameters */
-    int32_t nAuxpowChainId;
-    int nAuxpowStartHeight;
+    int16_t nAuxpowChainId;
+    bool fAllowAuxPow;
     bool fStrictChainId;
-    int nLegacyBlocksBefore; // -1 for "always allow"
+    bool fAllowLegacyBlocks;
 
-    /**
-     * Check whether or not to allow legacy blocks at the given height.
-     * @param nHeight Height of the block to check.
-     * @return True if it is allowed to have a legacy version.
-     */
-    bool AllowLegacyBlocks(unsigned nHeight) const
-    {
-        if (nLegacyBlocksBefore < 0)
-            return true;
-        return static_cast<int> (nHeight) < nLegacyBlocksBefore;
-    }
+    /** Height-aware consensus parameters */
+    uint32_t nHeightEffective; // When these parameters come into use
+    struct Params *pLeft;      // Left hand branch
+    struct Params *pRight;     // Right hand branch
 };
 } // namespace Consensus
 

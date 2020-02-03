@@ -62,6 +62,9 @@ static CBlock CreateGenesisBlock(uint32_t nTime, uint32_t nNonce, uint32_t nBits
  * Main network
  */
 class CMainParams : public CChainParams {
+protected:
+    Consensus::Params digishieldConsensus;
+    Consensus::Params auxpowConsensus;
 public:
     CMainParams() {
         strNetworkID = "main";
@@ -81,6 +84,38 @@ public:
         consensus.fPowNoRetargeting = false;
         consensus.nRuleChangeActivationThreshold = 1916; // 95% of 2016
         consensus.nMinerConfirmationWindow = 2016; // nPowTargetTimespan / nPowTargetSpacing
+        consensus.fDigishieldDifficultyCalculation = false;
+        consensus.fPowAllowDigishieldMinDifficultyBlocks = false;
+
+        // AuxPoW parameters
+        consensus.nAuxpowChainId = 0x7C1;
+        consensus.fStrictChainId = true;
+        consensus.fAllowLegacyBlocks = true;
+        consensus.fAllowAuxPow = false;
+        consensus.nHeightEffective = 0;
+        consensus.fDigishieldDifficultyCalculation = false;
+        consensus.nCoinbaseMaturity = 30;
+
+        // Blocks 4800000 are Digishield with AuxPoW
+        digishieldConsensus = consensus;
+        digishieldConsensus.nHeightEffective = 4800000;
+        digishieldConsensus.fAllowLegacyBlocks = false;
+        digishieldConsensus.fSimplifiedRewards = true;
+        digishieldConsensus.fDigishieldDifficultyCalculation = true;
+        digishieldConsensus.nPowTargetTimespan = 60; // post-digishield: 60 seconds
+        digishieldConsensus.nCoinbaseMaturity = 240;
+
+        // Blocks 4800000+ are AuxPoW
+        auxpowConsensus = digishieldConsensus;
+        auxpowConsensus.nHeightEffective = 4800000;
+        auxpowConsensus.fAllowLegacyBlocks = false;
+        auxpowConsensus.fAllowAuxPow = true;
+
+        // Assemble the binary search tree of consensus parameters
+        pConsensusRoot = &digishieldConsensus;
+        digishieldConsensus.pLeft = &consensus;
+        digishieldConsensus.pRight = &auxpowConsensus;
+
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].bit = 28;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nStartTime = 1199145601; // January 1, 2008
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nTimeout = 1230767999; // December 31, 2008
@@ -91,10 +126,6 @@ public:
         // By default assume that the signatures in ancestors of this block are valid.
         consensus.defaultAssumeValid = uint256S("0x0000000000000000000000000000000000000000000000000000000000000000");
 
-        consensus.nAuxpowChainId = 0x7C1; // 1985
-        consensus.nAuxpowStartHeight = 371337;
-        consensus.fStrictChainId = true;
-        consensus.nLegacyBlocksBefore = 371337;
         /** 
          * The message start string is designed to be unlikely to occur in normal data.
          * The characters are rarely used upper ASCII, not valid as UTF-8, and produce
@@ -111,6 +142,8 @@ public:
 
         genesis = CreateGenesisBlock(1394102925, 2482334, 0x1e0ffff0, 1, 88 * COIN);
         consensus.hashGenesisBlock = genesis.GetHash();
+        digishieldConsensus.hashGenesisBlock = consensus.hashGenesisBlock;
+        auxpowConsensus.hashGenesisBlock = consensus.hashGenesisBlock;
         assert(consensus.hashGenesisBlock == uint256S("0x5597f25c062a3038c7fd815fe46c67dedfcb3c839fbc8e01ed4044540d08fe48"));
         assert(genesis.hashMerkleRoot == uint256S("0x2bad42ac6e0ccc4808d8df0fd50ac8634eea335b1412b1ef52864b430a87b262"));
 
@@ -242,15 +275,17 @@ const CChainParams &Params() {
     return *globalChainParams;
 }
 
+
 std::unique_ptr<const CChainParams> CreateChainParams(const std::string& chain)
 {
-    if (chain == CBaseChainParams::MAIN)
+     if (chain == CBaseChainParams::MAIN)
         return std::unique_ptr<CChainParams>(new CMainParams());
-    else if (chain == CBaseChainParams::TESTNET)
+     else if (chain == CBaseChainParams::TESTNET)
         return std::unique_ptr<CChainParams>(new CTestNetParams());
-    else if (chain == CBaseChainParams::REGTEST)
+     else if (chain == CBaseChainParams::REGTEST)
         return std::unique_ptr<CChainParams>(new CRegTestParams(gArgs));
-    throw std::runtime_error(strprintf("%s: Unknown chain %s.", __func__, chain));
+    else
+        throw std::runtime_error(strprintf("%s: Unknown chain %s.", __func__, chain));
 }
 
 void SelectParams(const std::string& network)

@@ -24,7 +24,6 @@
 class CBlockHeader : public CPureBlockHeader
 {
 public:
-
     // auxpow (if this is a merge-minded block)
     std::shared_ptr<CAuxPow> auxpow;
 
@@ -37,7 +36,7 @@ public:
 
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
-        READWRITEAS(CPureBlockHeader, *this);
+        READWRITE(*(CPureBlockHeader*)this);
 
         if (this->IsAuxpow())
         {

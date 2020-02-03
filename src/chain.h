@@ -149,6 +149,9 @@ public:
     //! pointer to the index of some further predecessor of this block
     CBlockIndex* pskip;
 
+    //! pointer to the AuxPoW header, if this block has one
+    std::shared_ptr<CAuxPow> pauxpow;
+
     //! height of the entry in the chain. The genesis block has height 0
     int nHeight;
 
@@ -183,6 +186,9 @@ public:
     uint32_t nBits;
     uint32_t nNonce;
 
+    // NewYorkCoin: Keep the Scrypt hash as well as SHA256
+    uint256 hashBlockPoW;
+
     //! (memory only) Sequential id assigned to distinguish order in which blocks are received.
     int32_t nSequenceId;
 
@@ -210,6 +216,7 @@ public:
         nTime          = 0;
         nBits          = 0;
         nNonce         = 0;
+        hashBlockPoW   = uint256();
     }
 
     CBlockIndex()
@@ -226,6 +233,7 @@ public:
         nTime          = block.nTime;
         nBits          = block.nBits;
         nNonce         = block.nNonce;
+        hashBlockPoW   = block.GetPoWHash();
     }
 
     FlatFilePos GetBlockPos() const {
@@ -325,6 +333,17 @@ public:
     //! Efficiently find an ancestor of this block.
     CBlockIndex* GetAncestor(int height);
     const CBlockIndex* GetAncestor(int height) const;
+
+    /**
+     * Check if the auxpow flag is set in the version.
+     * @return True if this block version is marked as auxpow.
+     */
+    inline bool IsAuxpow() const
+    {
+        return nVersion & CPureBlockHeader::VERSION_AUXPOW;
+    }
+
+    /* Analyse the block version.  */
     inline int GetBaseVersion() const
     {
         return CPureBlockHeader::GetBaseVersion(nVersion);
@@ -377,11 +396,19 @@ public:
         READWRITE(nTime);
         READWRITE(nBits);
         READWRITE(nNonce);
+        READWRITE(hashBlockPoW);
+        if (this->IsAuxpow()) {
+            if (ser_action.ForRead())
+                pauxpow.reset(new CAuxPow());
+            assert(pauxpow);
+            READWRITE(*pauxpow);
+        } else if (ser_action.ForRead())
+            pauxpow.reset();
     }
 
     uint256 GetBlockHash() const
     {
-        CPureBlockHeader block;
+        CBlockHeader block;
         block.nVersion        = nVersion;
         block.hashPrevBlock   = hashPrev;
         block.hashMerkleRoot  = hashMerkleRoot;

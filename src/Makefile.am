@@ -91,11 +91,6 @@ endif
 if BUILD_BITCOIN_TX
   bin_PROGRAMS += newyorkcoin-tx
 endif
-if ENABLE_WALLET
-if BUILD_BITCOIN_WALLET
-  bin_PROGRAMS += newyorkcoin-wallet
-endif
-endif
 
 .PHONY: FORCE check-symbols check-security
 # newyorkcoin core #
@@ -604,33 +599,6 @@ newyorkcoin_tx_LDADD = \
   $(LIBSECP256K1)
 
 newyorkcoin_tx_LDADD += $(BOOST_LIBS) $(CRYPTO_LIBS)
-#
-
-# newyorkcoin-wallet binary #
-newyorkcoin_wallet_SOURCES = newyorkcoin-wallet.cpp
-newyorkcoin_wallet_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
-newyorkcoin_wallet_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
-newyorkcoin_wallet_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS)
-
-if TARGET_WINDOWS
-newyorkcoin_wallet_SOURCES += newyorkcoin-wallet-res.rc
-endif
-
-newyorkcoin_wallet_LDADD = \
-  $(LIBBITCOIN_WALLET_TOOL) \
-  $(LIBBITCOIN_WALLET) \
-  $(LIBBITCOIN_COMMON) \
-  $(LIBBITCOIN_CONSENSUS) \
-  $(LIBBITCOIN_UTIL) \
-  $(LIBBITCOIN_CRYPTO) \
-  $(LIBBITCOIN_ZMQ) \
-  $(LIBLEVELDB) \
-  $(LIBLEVELDB_SSE42) \
-  $(LIBMEMENV) \
-  $(LIBSECP256K1) \
-  $(LIBUNIVALUE)
-
-newyorkcoin_wallet_LDADD += $(BOOST_LIBS) $(BDB_LIBS) $(CRYPTO_LIBS) $(EVENT_PTHREADS_LIBS) $(EVENT_LIBS) $(MINIUPNPC_LIBS) $(ZMQ_LIBS)
 #
 
 # newyorkcoinconsensus library #

@@ -207,7 +207,7 @@ CAuxPow::initAuxPow (CBlockHeader& header)
 {
   /* Set auxpow flag right now, since we take the block hash below when creating
      the minimal auxpow for header.  */
-  header.SetAuxpowVersion(true);
+  header.SetAuxpowFlag(true);
 
   std::unique_ptr<CAuxPow> apow = createAuxPow (header);
   CPureBlockHeader& result = apow->parentBlock;

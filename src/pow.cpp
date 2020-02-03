@@ -12,7 +12,21 @@
 #include <uint256.h>
 #include <util/system.h>
 
-unsigned int Digishield(const CBlockIndex* pindexLast, int64_t nFirstBlockTime, const Consensus::Params& params)
+bool AllowDigishieldMinDifficultyForBlock(const CBlockIndex* pindexLast, const CBlockHeader *pblock, const Consensus::Params& params)
+{
+    // check if the chain allows minimum difficulty blocks
+    if (!params.fPowAllowMinDifficultyBlocks)
+        return false;
+
+    // check if the chain allows minimum difficulty blocks on recalc blocks
+    if (pindexLast->nHeight < 157500)
+        return false;
+
+    // Allow for a minimum block time if the elapsed time > 2*nTargetSpacing
+    return (pblock->GetBlockTime() > pindexLast->GetBlockTime() + params.nPowTargetSpacing*2);
+}
+
+unsigned int CalculateNewYorkCoinNextWorkRequired(const CBlockIndex* pindexLast, int64_t nFirstBlockTime, const Consensus::Params& params)
 {
     int nHeight = pindexLast->nHeight + 1;
     const int64_t retargetTimespan = params.nPowTargetTimespan;
@@ -21,7 +35,7 @@ unsigned int Digishield(const CBlockIndex* pindexLast, int64_t nFirstBlockTime, 
     int64_t nMaxTimespan;
     int64_t nMinTimespan;
 
-    if (true) /*if (params.fDigishieldDifficultyCalculation)*/ 
+    if (params.fDigishieldDifficultyCalculation) //DigiShield implementation - thanks to RealSolid & WDC for this code
     {
         // amplitude filter - thanks to daft27 for this code
         nModulatedTimespan = retargetTimespan + (nModulatedTimespan - retargetTimespan) / 8;
@@ -58,6 +72,50 @@ unsigned int Digishield(const CBlockIndex* pindexLast, int64_t nFirstBlockTime, 
         bnNew = bnPowLimit;
 
     return bnNew.GetCompact();
+}
+
+unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader *pblock, const Consensus::Params& params)
+{
+    assert(pindexLast != nullptr);
+    unsigned int nProofOfWorkLimit = UintToArith256(params.powLimit).GetCompact();
+
+    // Only change once per difficulty adjustment interval
+    if ((pindexLast->nHeight+1) % params.DifficultyAdjustmentInterval() != 0)
+    {
+        if (params.fPowAllowMinDifficultyBlocks)
+        {
+            // Special difficulty rule for testnet:
+            // If the new block's timestamp is more than 2* 10 minutes
+            // then allow mining of a min-difficulty block.
+            if (pblock->GetBlockTime() > pindexLast->GetBlockTime() + params.nPowTargetSpacing*2)
+                return nProofOfWorkLimit;
+            else
+            {
+                // Return the last non-special-min-difficulty-rules-block
+                const CBlockIndex* pindex = pindexLast;
+                while (pindex->pprev && pindex->nHeight % params.DifficultyAdjustmentInterval() != 0 && pindex->nBits == nProofOfWorkLimit)
+                    pindex = pindex->pprev;
+                return pindex->nBits;
+            }
+        }
+        return pindexLast->nBits;
+    }
+
+    // Go back by what we want to be 14 days worth of blocks
+    // Viacoin: This fixes an issue where a 51% attack can change difficulty at will.
+    // Go back the full period unless it's the first retarget after genesis. Code courtesy of Art Forz
+    int blockstogoback = params.DifficultyAdjustmentInterval()-1;
+    if ((pindexLast->nHeight+1) != params.DifficultyAdjustmentInterval())
+        blockstogoback = params.DifficultyAdjustmentInterval();
+
+    // Go back by what we want to be 14 days worth of blocks
+    const CBlockIndex* pindexFirst = pindexLast;
+    for (int i = 0; pindexFirst && i < blockstogoback; i++)
+        pindexFirst = pindexFirst->pprev;
+
+    assert(pindexFirst);
+
+    return CalculateNewYorkCoinNextWorkRequired(pindexLast, pindexFirst->GetBlockTime(), params);
 }
 
 unsigned int KimotoGravityWell(const CBlockIndex* pindexLast, const CBlockHeader* pblock, uint64_t TargetBlocksSpacingSeconds, uint64_t PastBlocksMin, uint64_t PastBlocksMax, const Consensus::Params& params)
@@ -134,7 +192,7 @@ unsigned int KimotoGravityWell(const CBlockIndex* pindexLast, const CBlockHeader
     return bnNew.GetCompact();
 }
 
-unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader* pblock, const Consensus::Params& params)
+unsigned int GetNextWorkRequiredLegacy(const CBlockIndex* pindexLast, const CBlockHeader *pblock, const Consensus::Params& params)
 {
     static const int64_t BlocksTargetSpacing = 30;
     unsigned int TimeDaySeconds = 60 * 60 * 24;
@@ -144,6 +202,44 @@ unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHead
     uint64_t PastBlocksMax = PastSecondsMax / BlocksTargetSpacing;
 
     return KimotoGravityWell(pindexLast, pblock, BlocksTargetSpacing, PastBlocksMin, PastBlocksMax, params);
+}
+
+bool CheckAuxPowProofOfWork(const CBlockHeader& block, const Consensus::Params& params)
+{
+    /* Except for legacy blocks with full version 1, ensure that
+       the chain ID is correct.  Legacy blocks are not allowed since
+       the merge-mining start, which is checked in AcceptBlockHeader
+       where the height is known.  */
+    if (!block.IsLegacy() && params.fStrictChainId
+        && block.GetChainId() != params.nAuxpowChainId)
+        return error("%s : block does not have our chain ID"
+                     " (got %d, expected %d, full nVersion %d)",
+                     __func__, block.GetChainId(),
+                     params.nAuxpowChainId, block.nVersion);
+
+    /* If there is no auxpow, just check the block hash.  */
+    if (!block.auxpow) {
+        if (block.IsAuxpow())
+            return error("%s : no auxpow on block with auxpow version",
+                         __func__);
+
+        if (!CheckProofOfWork(block.GetPoWHash(), block.nBits, params))
+            return error("%s : non-AUX proof of work failed", __func__);
+
+        return true;
+    }
+
+    /* We have auxpow.  Check it.  */
+
+    if (!block.IsAuxpow())
+        return error("%s : auxpow on block with non-auxpow version", __func__);
+
+    if (!block.auxpow->check(block.GetHash(), block.GetChainId(), params))
+        return error("%s : AUX POW is not valid", __func__);
+    if (!CheckProofOfWork(block.auxpow->getParentBlockPoWHash(), block.nBits, params))
+        return error("%s : AUX proof of work failed", __func__);
+
+    return true;
 }
 
 bool CheckProofOfWork(uint256 hash, unsigned int nBits, const Consensus::Params& params)

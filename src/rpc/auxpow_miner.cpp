@@ -41,8 +41,9 @@ void auxMiningCheck()
      past the point of merge-mining start.  Check nevertheless.  */
   {
     LOCK (cs_main);
-    const auto auxpowStart = Params ().GetConsensus ().nAuxpowStartHeight;
-    if (::ChainActive ().Height () + 1 < auxpowStart)
+    int nHeight = ::ChainActive ().Height () + 1;
+    const auto auxpowStart = Params().GetConsensus().nHeightEffective;
+    if (nHeight + 1 < auxpowStart)
       throw std::runtime_error ("mining auxblock method is not yet available");
   }
 }
@@ -86,7 +87,7 @@ AuxpowMiner::getCurrentBlock (const CScript& scriptPubKey, uint256& target)
 
         /* Finalise it by setting the version and building the merkle root.  */
         IncrementExtraNonce (&newBlock->block, pindexPrev, extraNonce);
-        newBlock->block.SetAuxpowVersion (true);
+        newBlock->block.SetAuxpowFlag (true);
 
         /* Save in our map of constructed blocks.  */
         pblockCur = &newBlock->block;

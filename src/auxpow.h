@@ -120,9 +120,9 @@ public:
    * Returns the parent block hash.  This is used to validate the PoW.
    */
   inline uint256
-  getParentBlockHash () const
+  getParentBlockPoWHash() const
   {
-    return parentBlock.GetHash ();
+      return parentBlock.GetPoWHash();
   }
 
   /**

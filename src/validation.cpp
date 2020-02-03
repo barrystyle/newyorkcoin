@@ -703,7 +703,7 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
     m_pool.ApplyDelta(hash, nModifiedFees);
 
     // Keep track of transactions that spend a coinbase, which we re-scan
-    // during reorgs to ensure COINBASE_MATURITY is still met.
+    // during reorgs to ensure Params().GetConsensus().CoinbaseMaturity() is still met.
     bool fSpendsCoinbase = false;
     for (const CTxIn &txin : tx.vin) {
         const Coin &coin = m_view.AccessCoin(txin.prevout);
@@ -1135,51 +1135,6 @@ bool GetTransaction(const uint256& hash, CTransactionRef& txOut, const Consensus
 // CBlock and CBlockIndex
 //
 
-bool CheckProofOfWork(const CBlockHeader& block, const Consensus::Params& params)
-{
-    /* Except for legacy blocks with full version 1, ensure that
-       the chain ID is correct.  Legacy blocks are not allowed since
-       the merge-mining start, which is checked in AcceptBlockHeader
-       where the height is known.  */
-    if (!block.IsLegacy() && params.fStrictChainId
-        && block.GetChainId() != params.nAuxpowChainId)
-        return error("%s : block does not have our chain ID"
-                     " (got %d, expected %d, full nVersion %d)",
-                     __func__, block.GetChainId(),
-                     params.nAuxpowChainId, block.nVersion);
-
-    /* If there is no auxpow, just check the block hash.  */
-    if (!block.auxpow)
-    {
-        if (block.IsAuxpow())
-            return error("%s : no auxpow on block with auxpow version",
-                         __func__);
-
-        if (!CheckProofOfWork(block.GetPoWHash(), block.nBits, params))
-            return error("%s : non-AUX proof of work failed", __func__);
-
-        return true;
-    }
-
-    /* We have auxpow.  Check it.  */
-
-    if (!block.IsAuxpow())
-        return error("%s : auxpow on block with non-auxpow version", __func__);
-
-    /* Temporary check:  Disallow parent blocks with auxpow version.  This is
-       for compatibility with the old client.  */
-    /* FIXME: Remove this check with a hardfork later on.  */
-    if (block.auxpow->getParentBlock().IsAuxpow())
-        return error("%s : auxpow parent block has auxpow version", __func__);
-
-    if (!CheckProofOfWork(block.auxpow->getParentBlockHash(), block.nBits, params))
-        return error("%s : AUX proof of work failed", __func__);
-    if (!block.auxpow->check(block.GetHash(), block.GetChainId(), params))
-        return error("%s : AUX POW is not valid", __func__);
-
-    return true;
-}
-
 static bool WriteBlockToDisk(const CBlock& block, FlatFilePos& pos, const CMessageHeader::MessageStartChars& messageStart)
 {
     // Open history file to append
@@ -1223,7 +1178,7 @@ static bool ReadBlockOrHeader(T& block, const FlatFilePos& pos, const Consensus:
     }
 
     // Check the header
-    if (!CheckProofOfWork(block, consensusParams))
+    if (!CheckAuxPowProofOfWork(block, consensusParams))
         return error("ReadBlockFromDisk: Errors in block header at %s", pos.ToString());
 
     return true;
@@ -1316,90 +1271,123 @@ int static generateMTRandom(unsigned int s, int range)
 
 CAmount GetBlockSubsidy(int nHeight, const CAmount& nFees, uint256 prevHash, const Consensus::Params& consensusParams)
 {
-	CAmount nSubsidy = 10000 * COIN;
+    int64_t maxSubsidy = 10000 * COIN;
+    int64_t minSubsidy = 50 * COIN;
+    int64_t nSubsidy = maxSubsidy;
 
-	std::string cseed_str = prevHash.ToString().substr(7,7);
-	const char* cseed = cseed_str.c_str();
-	long seed = hex2long(cseed);
-	int rand = generateMTRandom(seed, 999999);
-	int rand1 = 0;
-	int rand2 = 0;
-	int rand3 = 0;
-	int rand4 = 0;
-	int rand5 = 0;
+    std::string cseed_str = prevHash.ToString().substr(7, 7);
+    const char* cseed = cseed_str.c_str();
 
-	if (nHeight == 1) {
-	nSubsidy = 97000000 * COIN;
-	} else if (nHeight < 101) {
-	nSubsidy = 1 * COIN;
-	}
+    long seed = hex2long(cseed);
+    int rand = generateMTRandom(seed, 999999);
+    int rand1 = 0;
+    int rand2 = 0;
+    int rand3 = 0;
+    int rand4 = 0;
+    int rand5 = 0;
 
-	if (nHeight < 100000) {
-	nSubsidy = (1 + rand) * COIN;
-	} else if (nHeight < 200000) {
-	cseed_str = prevHash.ToString().substr(7,7);
-	cseed = cseed_str.c_str();
-	seed = hex2long(cseed);
-	rand1 = generateMTRandom(seed, 499999);
-	nSubsidy = (1 + rand1) * COIN;
-	} else if (nHeight < 300000) {
-	cseed_str = prevHash.ToString().substr(6,7);
-	cseed = cseed_str.c_str();
-	seed = hex2long(cseed);
-	rand2 = generateMTRandom(seed, 249999);
-	nSubsidy = (1 + rand2) * COIN;
-	} else if (nHeight < 400000) {
-	cseed_str = prevHash.ToString().substr(7,7);
-	cseed = cseed_str.c_str();
-	seed = hex2long(cseed);
-	rand3 = generateMTRandom(seed, 124999);
-	nSubsidy = (1 + rand3) * COIN;
-	} else if (nHeight < 500000) {
-	cseed_str = prevHash.ToString().substr(7,7);
-	cseed = cseed_str.c_str();
-	seed = hex2long(cseed);
-	rand4 = generateMTRandom(seed, 62499);
-	nSubsidy = (1 + rand4) * COIN;
-	} else if (nHeight < 600000) {
-	cseed_str = prevHash.ToString().substr(6,7);
-	cseed = cseed_str.c_str();
-	seed = hex2long(cseed);
-	rand5 = generateMTRandom(seed, 31249);
-	nSubsidy = (1 + rand5) * COIN;
-	} else if(nHeight > 4800000)
-	{
-	  int halvings = nHeight / consensusParams.nSubsidyHalvingInterval;
-	  if(nHeight < (9 * consensusParams.nSubsidyHalvingInterval)) // < 4,500,000
-	  {
-		 return 10000 * COIN;
-	  }
-	  else if (nHeight < (10 * consensusParams.nSubsidyHalvingInterval)) // < 5,000,000
-	  {
-		return 5000 * COIN;
-	  }
-	  else if (nHeight < (11 * consensusParams.nSubsidyHalvingInterval)) // < 5,500,000
-	  {
-		return 2500 * COIN;
-	  }
-	  else if (nHeight < (12 * consensusParams.nSubsidyHalvingInterval)) //< 6,000,000
-	  {
-		return 1250 * COIN;
-	  }
-	  else if (nHeight < (13 * consensusParams.nSubsidyHalvingInterval)) // < 6,500,000
-	  {
-		return 625 * COIN;
-	  }
-	  else if (nHeight < (14 * consensusParams.nSubsidyHalvingInterval)) // < 7,000,000
-	  {
-		return 100 * COIN;
-	  }
-	  else
-	  {
-		return 50 * COIN;
-	  }
+    // Start of botched pre-mine
+    // The following if/else block is overridden by the subsequent if/else block
+    // Leaving this for historical accuracy
+    if (consensusParams.nHeightEffective == 0)
+    {
+        if (nHeight == 1) {
+            nSubsidy = 97000000 * COIN;
+        }
+        else if (nHeight < 101) {
+            nSubsidy = 1 * COIN;
+        }
+        // End of botched pre-mine
+
+        if (nHeight < 100000) {
+            nSubsidy = (1 + rand) * COIN;
+        }
+        else if (nHeight < 200000) {
+            cseed_str = prevHash.ToString().substr(7, 7);
+            cseed = cseed_str.c_str();
+            seed = hex2long(cseed);
+            rand1 = generateMTRandom(seed, 499999);
+            nSubsidy = (1 + rand1) * COIN;
+        }
+        else if (nHeight < 300000) {
+            cseed_str = prevHash.ToString().substr(6, 7);
+            cseed = cseed_str.c_str();
+            seed = hex2long(cseed);
+            rand2 = generateMTRandom(seed, 249999);
+            nSubsidy = (1 + rand2) * COIN;
+        }
+        else if (nHeight < 400000) {
+            cseed_str = prevHash.ToString().substr(7, 7);
+            cseed = cseed_str.c_str();
+            seed = hex2long(cseed);
+            rand3 = generateMTRandom(seed, 124999);
+            nSubsidy = (1 + rand3) * COIN;
+        }
+        else if (nHeight < 500000) {
+            cseed_str = prevHash.ToString().substr(7, 7);
+            cseed = cseed_str.c_str();
+            seed = hex2long(cseed);
+            rand4 = generateMTRandom(seed, 62499);
+            nSubsidy = (1 + rand4) * COIN;
+        }
+        else if (nHeight < 600000) {
+            cseed_str = prevHash.ToString().substr(6, 7);
+            cseed = cseed_str.c_str();
+            seed = hex2long(cseed);
+            rand5 = generateMTRandom(seed, 31249);
+            nSubsidy = (1 + rand5) * COIN;
+        }
+        else if (nHeight > 4800000) { // 2018-4-14 - Block height 4,234,899
+            nSubsidy = maxSubsidy / 2; // 250,000 blocks is ~3 months based on data from 2018
+        }
+        else if (nHeight > 5000000) {
+            nSubsidy = maxSubsidy / 4;
+        }
+        else if (nHeight > 5500000) {
+            nSubsidy = maxSubsidy / 8;
+        }
+        else if (nHeight > 6000000) {
+            nSubsidy = maxSubsidy / 16;
+        }
+        else if (nHeight > 6500000) {
+            nSubsidy = minSubsidy * 2;
+        }
+        else if (nHeight > 7000000) {
+            nSubsidy = minSubsidy;
+        }
     }
+    else {
+        int halvings = nHeight / consensusParams.nSubsidyHalvingInterval;
 
-	return nSubsidy + nFees;
+        if (nHeight < (9 * consensusParams.nSubsidyHalvingInterval)) // < 4,500,000
+        {
+            return 10000 * COIN;
+        }
+        else if (nHeight < (10 * consensusParams.nSubsidyHalvingInterval)) // < 5,000,000
+        {
+            return 5000 * COIN;
+        }
+        else if (nHeight < (11 * consensusParams.nSubsidyHalvingInterval)) // < 5,500,000
+        {
+            return 2500 * COIN;
+        }
+        else if (nHeight < (12 * consensusParams.nSubsidyHalvingInterval)) //< 6,000,000
+        {
+            return 1250 * COIN;
+        }
+        else if (nHeight < (13 * consensusParams.nSubsidyHalvingInterval)) // < 6,500,000
+        {
+            return 625 * COIN;
+        }
+        else if (nHeight < (14 * consensusParams.nSubsidyHalvingInterval)) // < 7,000,000
+        {
+            return 100 * COIN;
+        }
+        else {
+            return 50 * COIN;
+        }
+    }
+    return nSubsidy;
 }
 
 CoinsViews::CoinsViews(
@@ -2336,7 +2324,7 @@ bool CChainState::ConnectBlock(const CBlock& block, CValidationState& state, CBl
     }
  
     CAmount blockReward = GetBlockSubsidy(pindex->nHeight, nFees, prevHash, chainparams.GetConsensus());
-    if (block.vtx[0]->GetValueOut() > blockReward)
+    if (block.vtx[0]->GetValueOut() > blockReward + nFees)
         return state.Invalid(ValidationInvalidReason::CONSENSUS,
                          error("ConnectBlock(): coinbase pays too much (actual=%d vs limit=%d)",
                                block.vtx[0]->GetValueOut(), blockReward),
@@ -3289,6 +3277,11 @@ CBlockIndex* BlockManager::AddToBlockIndex(const CBlockHeader& block)
     }
     pindexNew->nTimeMax = (pindexNew->pprev ? std::max(pindexNew->pprev->nTimeMax, pindexNew->nTime) : pindexNew->nTime);
     pindexNew->nChainWork = (pindexNew->pprev ? pindexNew->pprev->nChainWork : 0) + GetBlockProof(*pindexNew);
+    // NewYorkCoin: Add AuxPoW
+    if (block.IsAuxpow()) {
+        pindexNew->pauxpow = block.auxpow;
+        assert(NULL != pindexNew->pauxpow.get());
+    }
     pindexNew->RaiseValidity(BLOCK_VALID_TREE);
     if (pindexBestHeader == nullptr || pindexBestHeader->nChainWork < pindexNew->nChainWork)
         pindexBestHeader = pindexNew;
@@ -3418,6 +3411,17 @@ static bool FindUndoPos(CValidationState &state, int nFile, FlatFilePos &pos, un
 
 static bool CheckBlockHeader(const CBlockHeader& block, CValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW = false)
 {
+    // Check proof of work matches claimed amount
+    // We don't have block height as this is called without context (i.e. without
+    // knowing the previous block), but that's okay, as the checks done are permissive
+    // (i.e. doesn't check work limit or whether AuxPoW is enabled)
+    if (fCheckPOW && !CheckAuxPowProofOfWork(block, Params().GetConsensus(0)))
+        return state.Invalid(ValidationInvalidReason::CONSENSUS, false, REJECT_INVALID, "high-hash", "proof of work failed");
+
+    // Check timestamp
+    if (block.GetBlockTime() > GetAdjustedTime() + 2 * 60 * 60)
+        return state.Invalid(ValidationInvalidReason::CONSENSUS, false, REJECT_INVALID, "time-too-new", "block timestamp too far in the future");
+
     return true;
 }
 
@@ -3575,11 +3579,34 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, CValidationSta
 {
     assert(pindexPrev != nullptr);
     const int nHeight = pindexPrev->nHeight + 1;
-    const Consensus::Params& consensusParams = params.GetConsensus();
+    const Consensus::Params& consensusParams = params.GetConsensus(nHeight);
 
-    // Test if quicksync is appropriate
-    if (nHeight > QUICKSYNC_UNTIL_HEIGHT)
-        fSyncQuickly = false;
+    // Disallow legacy blocks after merge-mining start.
+    if (!consensusParams.fAllowLegacyBlocks && block.IsLegacy())
+        return state.Invalid(ValidationInvalidReason::CONSENSUS,
+                             error("%s : legacy block after auxpow start at height %d, parameters effective from %d",
+                             __func__, pindexPrev->nHeight + 1, consensusParams.nHeightEffective), REJECT_INVALID, "late-legacy-block");
+
+    // Disallow AuxPow blocks before it is activated.
+    if (!consensusParams.fAllowAuxPow && block.IsAuxpow())
+        return state.Invalid(ValidationInvalidReason::CONSENSUS,
+                             error("%s : auxpow blocks are not allowed at height %d, parameters effective from %d",
+                             __func__, pindexPrev->nHeight + 1, consensusParams.nHeightEffective), REJECT_INVALID, "early-auxpow-block");
+
+    // Check proof of work
+    // Legacy
+    if (consensusParams.fAllowLegacyBlocks)
+    { 
+        if((unsigned int)block.nBits != GetNextWorkRequiredLegacy(pindexPrev, &block, consensusParams))
+                 return state.Invalid(ValidationInvalidReason::CONSENSUS, error("%s : incorrect proof of work (expected %08x, got %08x)",
+                                      __func__, GetNextWorkRequiredLegacy(pindexPrev, &block, consensusParams), block.nBits), REJECT_INVALID, "bad-diffbits");
+    }
+    else
+    {
+        if(block.nBits != GetNextWorkRequired(pindexPrev, &block, consensusParams))
+                 return state.Invalid(ValidationInvalidReason::CONSENSUS, error("%s : incorrect proof of work (GetNextWorkRequired expected %08x, got %08x)",
+                                      __func__, GetNextWorkRequired(pindexPrev, &block, consensusParams), block.nBits), REJECT_INVALID, "bad-diffbits");
+    }
 
     // Check against checkpoints
     if (fCheckpointsEnabled) {
@@ -3616,22 +3643,6 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, CValidationSta
 static bool ContextualCheckBlock(const CBlock& block, CValidationState& state, const Consensus::Params& consensusParams, const CBlockIndex* pindexPrev)
 {
     const int nHeight = pindexPrev == nullptr ? 0 : pindexPrev->nHeight + 1;
-
-    // Disallow legacy blocks after merge-mining start.
-    if (!Params().GetConsensus().AllowLegacyBlocks(nHeight)
-        && block.IsLegacy())
-        return state.Invalid(ValidationInvalidReason::CONSENSUS, false, REJECT_INVALID, "late-legacy-block", "legacy block after auxpow start");
-
-    // Dogecoin: Disallow AuxPow blocks before it is activated.
-    // TODO: Remove this test, as checkpoints will enforce this for us now
-    // NOTE: Previously this had its own fAllowAuxPoW flag, but that's always the opposite of fAllowLegacyBlocks
-    if (Params().GetConsensus().AllowLegacyBlocks(nHeight)
-        && block.IsAuxpow())
-        return state.Invalid(ValidationInvalidReason::CONSENSUS, false, REJECT_INVALID, "auxpow blocks are not allowed at height", "early-auxpow-block");
-
-    // Check proof of work
-    if (block.nBits != GetNextWorkRequired(pindexPrev, &block, consensusParams))
-        return state.Invalid(ValidationInvalidReason::BLOCK_INVALID_HEADER, false, REJECT_INVALID, "bad-diffbits", "incorrect proof of work");
 
     // Start enforcing BIP113 (Median Time Past).
     int nLockTimeFlags = 0;
@@ -3887,7 +3898,7 @@ bool CChainState::AcceptBlock(const std::shared_ptr<const CBlock>& pblock, CVali
     }
 
     if (!CheckBlock(block, state, chainparams.GetConsensus()) ||
-        !ContextualCheckBlock(block, state, chainparams.GetConsensus(), pindex->pprev)) {
+        !ContextualCheckBlock(block, state, chainparams.GetConsensus(pindex->nHeight), pindex->pprev)) {
         assert(IsBlockReason(state.GetReason()));
         if (state.IsInvalid() && state.GetReason() != ValidationInvalidReason::BLOCK_MUTATED) {
             pindex->nStatus |= BLOCK_FAILED_VALID;

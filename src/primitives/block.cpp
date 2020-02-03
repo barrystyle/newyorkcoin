@@ -13,11 +13,11 @@ void CBlockHeader::SetAuxpow (std::unique_ptr<CAuxPow> apow)
     if (apow != nullptr)
     {
         auxpow.reset(apow.release());
-        SetAuxpowVersion(true);
+        SetAuxpowFlag(true);
     } else
     {
         auxpow.reset();
-        SetAuxpowVersion(false);
+        SetAuxpowFlag(false);
     }
 }
 

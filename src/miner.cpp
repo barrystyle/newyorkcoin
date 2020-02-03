@@ -27,19 +27,15 @@
 #include <queue>
 #include <utility>
 
-int64_t UpdateTime(CBlockHeader* pblock, const Consensus::Params& consensusParams, const CBlockIndex* pindexPrev)
+void UpdateTime(CBlockHeader* pblock, const Consensus::Params& consensusParams, const CBlockIndex* pindexPrev)
 {
-    int64_t nOldTime = pblock->nTime;
-    int64_t nNewTime = std::max(pindexPrev->GetMedianTimePast()+1, GetAdjustedTime());
-
-    if (nOldTime < nNewTime)
-        pblock->nTime = nNewTime;
+    pblock->nTime = std::max(pindexPrev->GetMedianTimePast()+1, GetAdjustedTime());
 
     // Updating time can change work required on testnet:
-    if (consensusParams.fPowAllowMinDifficultyBlocks)
+    if(consensusParams.fPowAllowMinDifficultyBlocks && consensusParams.nHeightEffective == 0)
+        pblock->nBits = GetNextWorkRequiredLegacy(pindexPrev, pblock, consensusParams);
+    else if (consensusParams.fPowAllowMinDifficultyBlocks)
         pblock->nBits = GetNextWorkRequired(pindexPrev, pblock, consensusParams);
-
-    return nNewTime - nOldTime;
 }
 
 BlockAssembler::Options::Options() {
@@ -91,6 +87,8 @@ Optional<int64_t> BlockAssembler::m_last_block_weight{nullopt};
 
 std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& scriptPubKeyIn)
 {
+    const CChainParams& chainparams = Params();
+
     int64_t nTimeStart = GetTimeMicros();
 
     resetBlock();
@@ -110,8 +108,9 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
     CBlockIndex* pindexPrev = ::ChainActive().Tip();
     assert(pindexPrev != nullptr);
     nHeight = pindexPrev->nHeight + 1;
+    const Consensus::Params& consensusParams = chainparams.GetConsensus();
 
-    const int32_t nChainId = chainparams.GetConsensus ().nAuxpowChainId;
+    const int32_t nChainId = chainparams.GetConsensus().nAuxpowChainId;
     // FIXME: Active version bits after the always-auxpow fork!
     //const int32_t nVersion = ComputeBlockVersion(pindexPrev, chainparams.GetConsensus());
     const int32_t nVersion = 4;
@@ -165,8 +164,11 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
 
     // Fill in header
     pblock->hashPrevBlock  = pindexPrev->GetBlockHash();
-    UpdateTime(pblock, chainparams.GetConsensus(), pindexPrev);
-    pblock->nBits          = GetNextWorkRequired(pindexPrev, pblock, chainparams.GetConsensus());
+    UpdateTime(pblock, consensusParams, pindexPrev);
+    if(consensusParams.fAllowLegacyBlocks)
+      pblock->nBits          = GetNextWorkRequiredLegacy(pindexPrev, pblock, consensusParams);
+    else
+      pblock->nBits          = GetNextWorkRequired(pindexPrev, pblock, consensusParams);
     pblock->nNonce         = 0;
     pblocktemplate->vTxSigOpsCost[0] = WITNESS_SCALE_FACTOR * GetLegacySigOpCount(*pblock->vtx[0]);
 

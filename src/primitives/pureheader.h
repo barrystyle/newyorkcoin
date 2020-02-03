@@ -134,7 +134,7 @@ public:
      * Set the auxpow flag.  This is used for testing.
      * @param auxpow Whether to mark auxpow as true.
      */
-    inline void SetAuxpowVersion (bool auxpow)
+    inline void SetAuxpowFlag(bool auxpow)
     {
         if (auxpow)
             nVersion |= VERSION_AUXPOW;
@@ -148,7 +148,8 @@ public:
      */
     inline bool IsLegacy() const
     {
-        return nVersion == 1;
+        return nVersion == 1
+            || (nVersion == 2 && GetChainId() == 0);
     }
 };
 
