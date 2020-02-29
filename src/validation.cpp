@@ -59,7 +59,7 @@
 typedef std::vector<unsigned char> valtype;
 
 #if defined(NDEBUG)
-# error "Bitcoin cannot be compiled without assertions."
+# error "Newyorkcoin cannot be compiled without assertions."
 #endif
 
 #define MICRO 0.000001
