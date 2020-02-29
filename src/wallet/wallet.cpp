@@ -4658,8 +4658,9 @@ int CWalletTx::GetBlocksToMaturity(interfaces::Chain::Lock& locked_chain) const
     if (!IsCoinBase())
         return 0;
     int chain_depth = GetDepthInMainChain(locked_chain);
+    int nHeight = ::ChainActive().Height();
     assert(chain_depth >= 0); // coinbase tx should not be conflicted
-    return std::max(0, (Params().GetConsensus().CoinbaseMaturity()+1) - chain_depth);
+    return std::max(0, (Params().GetConsensus(nHeight).CoinbaseMaturity()+1) - chain_depth);
 }
 
 bool CWalletTx::IsImmatureCoinBase(interfaces::Chain::Lock& locked_chain) const

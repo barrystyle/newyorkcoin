@@ -506,7 +506,7 @@ void CTxMemPool::removeForReorg(const CCoinsViewCache *pcoins, unsigned int nMem
                     continue;
                 const Coin &coin = pcoins->AccessCoin(txin.prevout);
                 if (nCheckFrequency != 0) assert(!coin.IsSpent());
-                if (coin.IsSpent() || (coin.IsCoinBase() && ((signed long)nMemPoolHeight) - coin.nHeight < Params().GetConsensus().CoinbaseMaturity())) {
+                if (coin.IsSpent() || (coin.IsCoinBase() && ((signed long)nMemPoolHeight) - coin.nHeight < Params().GetConsensus(nMemPoolHeight).CoinbaseMaturity())) {
                     txToRemove.insert(it);
                     break;
                 }
